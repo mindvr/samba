@@ -1,0 +1,39 @@
+name: Build image and push to Docker Hub
+
+env:
+  IMAGE_NAME: samba
+  TARGET_PLATFORM: linux/amd64,linux/arm64
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - v*
+    
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+
+    steps:
+    - name: Setup qemu and builx
+      run: |
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        docker buildx create --name multi
+        docker buildx use multi
+    
+    - name: Login to Docker Hub
+      run: echo "${{ secrets.DOCKERHUB_PASSWORD }}" | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+    
+    - name: Checkout repo
+      uses: actions/checkout@v2
+    
+    - name: Build and push image
+      run: |
+        # Strip git ref prefix from version
+        VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+        # Strip "v" prefix from tag name
+        [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
+        # Use Docker `latest` tag convention
+        [ "$VERSION" == "master" ] && VERSION=latest
+        docker buildx build -t ${{ secrets.DOCKERHUB_USERNAME }}/$IMAGE_NAME:$VERSION --platform $TARGET_PLATFORM --push .
